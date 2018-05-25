@@ -1,0 +1,575 @@
+	.data
+pantallaAncho: .word 16
+pantallaAlto: .word 10 #Alto y ancho de la pantalla Ancho 16*4 y Alto 9*4
+
+posX: .word 8 #Posición incial de la rana en X
+posY: .word 10 #Posición inicial de la rana en Y
+
+	#Posiciones de aparición de los carros, desplazamiento a el $gp
+posCar1: .word 512
+posCam2: .word 508
+posCar3: .word 384
+
+	#Posiciones de memoria de la que parten los troncos, desplazamiento a el $gp
+posTron1: .word 128
+posTron2: .word 252
+posTron3: .word 256
+
+	#Valores hexadecimales de los colores
+camion: .word 0x3F3FFF #Color azul claro para el camión
+carro: .word 0x8E0CCE #Color rojo para el carro
+tronco: .word 0x800000 #Color marrón para el tronco
+mosca: .word 0x000000 #Color negro para la mosca
+rana: .word 0x008000 #Color verde para la rana
+fondoGrama: .word 0x00FF00 #Color lima para la grama
+fondoAsfalto: .word 0x808080 #Color gris para el asfalto
+fondoAgua: .word 0x0000FF #Color azul del agua
+
+pantallaDireccion: .word 0x01000000
+
+contadores:
+	.byte 20 #Se deberá reiniciar cada que llegue se suelte un carro, CONTADOR DE LA PRIMERA FILA DE CARROS
+	.byte 23 #Se deberá reiniciar cada que llegue se suelte un carro, CONTADOR DE LA SEGUNDA FILA DE CARROS/CAMION
+	.byte 25 #Se deberá reiniciar cada que llegue se suelte un camión, CONTADOR DE LA TERCERA FILA DE CARROS/CAMION
+	.byte 21 #Se deberá reiniciar cada que llegue se suelte un tronco, CONTADOR DE LA PRIMERA FILA DE TRONCOS
+	.byte 15 #Se deberá reiniciar cada que llegue se suelte un tronco, CONTADOR DE LA SEGUNDA FILA DE TRONCOS
+	.byte 10 #Se deberá reiniciar cada que llegue se suelte un tronco, CONTADOR DE LA TERCERA FILA DE TRONCOS
+	.byte 20 #Se deberá reiniciar cada que llegue se suelte una mosca, CONTADOR DE LA APARICIÓN DE MOSCAS
+	.space 1
+cont_Avanza_t: .byte 0
+	 
+	.text
+	inicializar:
+
+jal pintarFondo
+
+
+lw $a0, posX
+lw $a1, posY
+jal calculoPos
+or $s0, $v0, $zero #Contiene la posición de la rana
+lw $t0, rana
+sw $t0, 0($s0)
+
+
+jam:
+jal Sleep
+j jam
+###############################################################################################
+#Función de sleep, se pasa un ciclo de ejecución
+#En a0 esta la cantidad de tiempo a pausar ejecución
+	Sleep:
+li $v0, 32
+li $a0, 200
+syscall
+li $t0, 0
+addi $sp, $sp, -4 #Backup de la posición de memoria en el ra puesto en la pila
+sw $ra, 0($sp)
+	#Hacer operaciones con los contadores de troncos, mosca y carro/camión
+	loopContadoresSleep:
+lbu $a2, contadores($t0) #Se carga el contador de memoria
+addi $a2, $a2, 1 #Se le suma uno
+or $a0, $t0, $zero #Se mueve el apuntador de t0 a a0
+jal generarCCT #Se llama la función de generar carro, 
+sb $a2, contadores($t0)
+addi $t0, $t0, 1
+ble $t0, 6, loopContadoresSleep
+
+lbu $t0, cont_Avanza_t
+addi $t0, $t0, 1
+sb $t0, cont_Avanza_t
+jal moverCCT
+
+jal dibujarTodo
+
+li $t0, 0 #Limpiar registros
+li $a0, 0
+li $a1, 0
+li $a2, 0
+
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Procedimiento para generar los objetos dañinos para la rana
+#Se tiene en a2 el contador de carro, camion o tronco
+#En a0 esta la posición del contador 
+#Se efectua movimientos dependiendo de sus posiciones en memo
+	generarCCT:
+
+blt $a2, 25, seguir #Si el contador es menor a 25 no hay razón para agregar un carro, camión o tronco
+or $t0, $a0, $zero
+li $a0, 40 #Preparación del pseudorandom
+li $a1, 100
+li $v0, 42
+syscall
+blt $a0, 80, seguir #Si el pseudorandom es menor a 90 no se genera carro/tronco/camion (30% de las veces se genera)
+addi $sp, $sp, -4 #Guardar contenido del registro ra en el stack
+
+sw $ra, 0($sp)
+
+lw $a1, pantallaAncho
+lw $a2, pantallaAlto
+beq $t0, 0, filaUnoCarro
+beq $t0, 1, filaDosCarro
+beq $t0, 2, filaTresCarro
+beq $t0, 3, filaUnoTronco
+beq $t0, 4, filaDosTronco
+beq $t0, 5, filaTresTronco
+
+	mosca_Poner:
+
+	filaTresTronco:
+lw $t1, tronco
+lw $t2, posTron3
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, 4($t2)
+lw $t5, 8($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+beq $t5, $t1, restaura
+sw $t1, 0($t2)
+j restaura
+
+	filaDosTronco:
+lw $t1, tronco
+lw $t2, posTron2
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, -4($t2)
+lw $t5, -8($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+beq $t5, $t1, restaura
+sw $t1, 0($t2)
+j restaura
+
+	filaUnoTronco:
+lw $t1, tronco
+lw $t2, posTron1
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, 4($t2)
+lw $t5, 8($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+beq $t5, $t1, restaura
+sw $t1, 0($t2)
+j restaura
+	
+	filaTresCarro:
+lw $t1, carro
+lw $t2, posCar3
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, 4($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+sw $t1, 0($t2)
+j restaura
+
+	filaDosCarro:
+lw $t1, camion
+lw $t2, posCam2
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, -4($t2)
+lw $t5, -8($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+beq $t5, $t1, restaura
+sw $t1, 0($t2)
+j restaura
+
+	filaUnoCarro:
+lw $t1, carro
+lw $t2, posCar1
+addu $t2, $t2, $gp
+lw $t3, 0($t2)
+lw $t4, 4($t2)
+beq $t3, $t1, restaura
+beq $t4, $t1, restaura
+sw $t1, 0($t2)
+
+	restaura:
+lw $ra, 0($sp) #Restaurar posición de memoria
+addi $sp, $sp, 4
+li $a2, 0
+
+	seguir:
+jr $ra
+
+###############################################################################################
+#Procedimiento para el movimiento de los carros, camiones y troncos
+
+	moverCCT:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+
+lbu $t9, cont_Avanza_t
+
+bne $t9, 5, seguirCCT1
+	#Preparar para movimiento de izquierda a derecha
+li $a0, 0 #t0
+li $a1, 188 #t1
+addu $a1, $a1, $gp
+jal moverIzq_Der_t #Fila 1
+
+li $a0, 0
+li $a1, 192
+addu $a1, $a1, $gp
+lw $a2, tronco
+lw $a3, fondoAgua
+jal moverDer_Izq #Fila 2
+
+li $a0, 0 #t0
+li $a1, 316 #t1
+addu $a1, $a1, $gp
+jal moverIzq_Der_t #Fila 3
+
+li $t9, 0 #Reinicia contador de movimiento
+
+	seguirCCT1:
+
+li $a0, 0
+li $a1, 444
+addu $a1, $a1, $gp
+jal moverIzq_Der_c #Fila 3 de carros
+
+li $a0, 0
+li $a1, 448
+addu $a1, $a1, $gp
+lw $a2, camion
+lw $a3, fondoAsfalto
+jal moverDer_Izq #Fila 2 de camion
+
+li $a0, 0
+li $a1, 572
+addu $a1, $a1, $gp
+jal moverIzq_Der_c #Fila 1 de carros
+
+sb $t9, cont_Avanza_t
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Movimineto de izquierda a derecha de troncos
+#$t0 es contador de iteraciones, $t1 y $t2 apuntadores de memoria
+#$t3 y $t4 ayudan para el intercambio de datos en memoria
+
+	moverIzq_Der_t:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+
+or $t0, $zero, $a0
+or $t1, $zero, $a1
+lw $t2, tronco
+lw $t3, fondoAgua
+
+	loop_mover_i_d_t: #Se toman en cuenta 6 casos para correr de izquierda a derecha los troncos
+			  #El barrido se hace de derecha a izquierda
+
+lw $t4, 0($t1)
+lw $t5, -4($t1)
+lw $t6, -8($t1)
+lw $t7, -12($t1)
+                                                                      #Es 1 o 0 espacios de tronco?
+bne $t4, $t2, sigue_mover_i_d_t    #Si el actual no es tronco se busca el siguiente
+                #De lo contrario se evalua el contenido del anterior
+
+beq $t0, 60, ext_i2_i_d_t        #De lo contrario se evalua de que extremo de la fila está el espacio de tronco
+beq $t5, $t2, cond2_mover_i_d_t #Es 1 o 2 espacios de tronco?
+
+sw $t3, 0($t1) #Si está del lado derecho se agrega un agua en la posición actual
+j sigue_mover_i_d_t
+
+    ext_i2_i_d_t:            #Si está del lado izquierdo se agrega un tronco a la derecha
+sw $t2, 4($t1)
+j sigue_mover_i_d_t        #Se salta al siguiente
+
+    cond2_mover_i_d_t:    #Son 3 o 2 espacios contiguos de tronco?
+			#De lo contrario se evalua de que extremo se encuentra
+beq $t0, 56, ext_i3_i_d_t
+beq $t6, $t2, cond3_mover_i_d_t    #Si los 3 son troncos se evalua la siguiente condición
+
+sw $t3, -4($t1)           #Si está del lado izquierdo se agrega un tronco a la derecha
+j sigue_mover_i_d_t
+
+    ext_i3_i_d_t:            #Si está del lado derecho se agrega un agua en la posición a -4 de la actual
+sw $t2, 4($t1)
+j sigue_mover_i_d_t
+
+    cond3_mover_i_d_t:    #Extremo en el que se ubica el tronco o si está en el centro
+bne $t0, 0, ext_if_i_d_t        #Si el iterador t0 es igual a 0 no han habido desplazamiento y se encuentra en el extremo derecho
+                	    #Si está en el extremo derecho se agrega agua en la posición -8 a la actual
+sw $t3, -8($t0)
+j sigue_mover_i_d_t
+
+    ext_if_i_d_t:            #De lo contrario está en el centro o a la izquierda, se desplaza todo el tronco
+
+sw $t2, 4($t1)
+sw $t2, 0($t1)
+sw $t2, -4($t1)
+sw $t3, -8($t1)
+addi $t0, $t0, 4
+addi $t1, $t1, -4
+j sigue_mover_i_d_t
+
+	sigue_mover_i_d_t:
+addi $t0, $t0, 4
+addi $t1, $t1, -4
+
+ble $t0, 60, loop_mover_i_d_t
+
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Movimineto de izquierda a derecha de carros
+#Mismo concepto del movimiento de troncos pero con parámetros distintos
+	moverIzq_Der_c:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+
+or $t0, $zero, $a0
+or $t1, $zero, $a1
+lw $t2, carro
+lw $t3, fondoAsfalto
+
+	loop_mover_i_d_c: #Se toman en cuenta 6 casos para correr de izquierda a derecha los carros
+			  #El barrido se hace de derecha a izquierda
+
+lw $t4, 0($t1)
+lw $t5, -4($t1)
+                                   #Es 1 o 0 espacios de carro?
+bne $t4, $t2, sigue_mover_i_d_c    #Si el actual no es carro se busca el siguiente
+                #De lo contrario se evalua el contenido del anterior
+
+beq $t0, 60, ext_i1_i_d_c       #Se estamos en la última iteración y hay un espacio de carro confirmado se procede al primer caso
+beq $t5, $t2, cond2_mover_i_d_c #Es 2 espacios de carro?
+
+sw $t3, 0($t1) #Si está del lado derecho se agrega un espacio de asfalto en la posición actual
+j sigue_mover_i_d_c
+
+    ext_i1_i_d_c:  #Si está del lado izquierdo y es un solo espacio, se agrega un carro a la derecha
+sw $t2, 4($t1)
+j sigue_mover_i_d_c       #Se salta al siguiente
+
+    cond2_mover_i_d_c:    #Son 2 espacios de carro
+bne $t0, 0, ext_i2_i_d_c  #Se confirma si están del lado izquierdo o en otro lugar
+
+sw $t3, -4($t1)           #Si está del lado derecho se llena de asfalto la posición -4 
+j sigue_mover_i_d_c
+
+    ext_i2_i_d_c:            #Si está del lado izquierdo o en el centro se desplaza el carro
+sw $t3, -4($t1)
+sw $t2, 0($t1)
+sw $t2, 4($t1)
+addi $t0, $t0, 4
+addi $t1, $t1, -4
+
+	sigue_mover_i_d_c:
+addi $t0, $t0, 4
+addi $t1, $t1, -4
+
+ble $t0, 60, loop_mover_i_d_c
+
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Movimiento de derecha a izquierda de camiones y troncos
+#Función general para ambos pues miden 3 pixeles
+
+moverDer_Izq:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+
+or $t0, $zero, $a0
+or $t1, $zero, $a1
+or $t2, $zero, $a2
+or $t3, $zero, $a3
+
+	loop_mover_d_i: #Se toman en cuenta 6 casos para correr de derecha a izquierda
+			  #El barrido se hace de izquierda a derecha
+
+lw $t4, 0($t1)
+lw $t5, 4($t1)
+lw $t6, 8($t1)
+lw $t7, 12($t1)
+                                                                      #Es 1 o 0 espacios de tronco?
+bne $t4, $t2, sigue_mover_d_i    #Si el actual no es tronco se busca el siguiente
+                #De lo contrario se evalua el contenido del anterior
+
+beq $t0, 60, ext_i2_d_i        #De lo contrario se evalua de que extremo de la fila está el espacio lleno
+beq $t5, $t2, cond2_mover_d_i #Es 1 o 2 espacios llenos?
+
+sw $t3, 0($t1) #Si está del lado izquierdo se agrega un agua en la posición actual
+j sigue_mover_d_i
+
+    ext_i2_d_i:            #Si está del lado derecho se agrega un contenido a la izquierda
+sw $t2, -4($t1)
+j sigue_mover_d_i        #Se salta al siguiente
+
+    cond2_mover_d_i:    #Son 3 o 2 espacios contiguos llenos?
+			#De lo contrario se evalua de que extremo se encuentra
+beq $t0, 56, ext_i3_d_i
+beq $t6, $t2, cond3_mover_d_i    #Si los 3 estan llenos se evalua la siguiente condición
+
+sw $t3, 4($t1)           #Si está del lado izquierdo se agrega un vacio a la derecha
+j sigue_mover_d_i
+
+    ext_i3_d_i:            #Si está del lado derecha se agrega un elemento en la posición a -4 de la actual
+sw $t2, -4($t1)
+j sigue_mover_d_i
+
+    cond3_mover_d_i:    #Extremo en el que se ubica el tronco o si está en el centro
+bne $t0, 0, ext_if_d_i      #Si el iterador t0 es igual a 0 no han habido desplazamiento y se encuentra en el extremo izquierdo
+                	    #Si está en el extremo izquierdo se agrega fondo en la posición 8 a la actual
+sw $t3, 8($t1)
+j sigue_mover_d_i
+
+    ext_if_d_i:            #De lo contrario está en el centro o a la derecha, se desplaza todo el elemento
+
+sw $t2, -4($t1)
+sw $t2, 0($t1)
+sw $t2, 4($t1)
+sw $t3, 8($t1)
+addi $t0, $t0, 4
+addi $t1, $t1, 4
+j sigue_mover_d_i
+
+	sigue_mover_d_i:
+addi $t0, $t0, 4
+addi $t1, $t1, 4
+
+ble $t0, 60, loop_mover_d_i
+
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Imprimir toda el bitmap guardado
+	dibujarTodo:
+addi $sp, $sp, -4
+sw $ra, 0($sp)
+
+or $t0, $zero, $gp
+lw $a1, pantallaAncho
+lw $a2, pantallaAlto
+
+	loopDibujarTodo: #Iterar por todas las posiciones de memoria a para pintarlas
+lw $t1, 0($t0)
+or $a0, $zero, $t1
+or $a1, $zero, $t0
+jal dibujar
+addi $t0, $t0, 4
+ble $t0, 636, loopDibujarTodo
+
+lw $ra, 0($sp)
+addi $sp, $sp, 4
+jr $ra
+
+###############################################################################################
+#Pintar fondos
+#Balurdo y sencillo
+	pintarFondo:
+lw $a0, pantallaAncho
+lw $a1, pantallaAlto
+multu $a0, $a1
+mflo $a0
+sll $a0, $a0, 2
+addu $a0, $a0, $gp #Posición relativa al global poiner
+
+	#a1 contiene grama, a2 asfalto y a3 agua
+lw $a1, fondoGrama
+lw $a2, fondoAsfalto
+lw $a3, fondoAgua
+or $t0, $zero, $gp #t0 sirve de puntero
+addi $t0, $t0, 64 #Se obvia la primera fila con las vidas y score
+addi $t1, $t0, 64 #Comparación para alternar entre secciones
+	loopPintarSeccion1: #Sección de grama
+sw $a1, 0($t0)
+addi $t0, $t0, 4
+blt $t0, $t1, loopPintarSeccion1
+addi $t1, $t1, 192
+	loopPintarSeccion2: #Sección de agua
+sw $a3, 0($t0)
+addi $t0, $t0, 4
+blt  $t0, $t1, loopPintarSeccion2
+addi $t1, $t1, 64
+	loopPintarSeccion3: #Seccion de grama 2
+sw $a1, 0($t0)
+addi $t0, $t0, 4
+blt  $t0, $t1, loopPintarSeccion3
+addi $t1, $t1, 192
+	loopPintarSeccion4: #Seccion de asfalto
+sw $a2, 0($t0)
+addi $t0, $t0, 4
+blt $t0, $t1, loopPintarSeccion4
+	loopPintarSeccion5: #Seccion de grama 3
+sw $a1, 0($t0)
+addi $t0, $t0, 4
+blt $t0, $a0, loopPintarSeccion5
+li $t0, 0
+li $t1, 0 #Limpiar registros
+jr $ra
+
+###############################################################################################
+#Calculo de la posición como dirección de memoria (Bytes)
+#Se pasan posX en $a0 y posY en $a1
+#Se retorna en $v0 la dirección relativa
+	calculoPos:
+move $v0, $a0 #v0 = posX
+lw $a0, pantallaAncho #a0 = 16
+addi $a1, $a1, -1 #a1 = a1 - 1
+multu $a0, $a1 
+mflo $a0 #a0 = a1*16
+addu $v0, $v0, $a0 #Posición en pixeles
+sll $v0, $v0, 2 #Multiplicar por 4 para transportar a bytes
+addu $v0, $v0, $gp #Se suma la posición del global pointer
+jr $ra
+
+###############################################################################################
+#Se tiene en $a1 el ancho de pantalla, el alto en $a2 y en $a3 la posicion a dibujar
+#Se tiene en $a0 el color a dibujar en el bitmap
+#Solo funciona con un pixel único
+	dibujar:
+lw $a1, pantallaAncho
+lw $a2, pantallaAlto
+multu $a1, $a2 #Total de pixeles de la pantalla
+mflo $a1
+sll $a1, $a1, 2 #Total de bytes en la pantalla
+addu $a1, $a1, $gp #Relativo al global pointer
+or $a2, $zero, $gp #En el a2 se guarda la posición 0 relativa de la pantalla
+	cicloDibujar:
+bne $a2, $a3, siguienteDibujar
+sw $a0, ($a2)
+j salDibujar
+	siguienteDibujar:
+addi $a2, $a2, 4
+ble $a2, $a1, cicloDibujar
+	salDibujar:
+jr $ra
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
